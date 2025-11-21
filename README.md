@@ -2,6 +2,8 @@
 
 A modern, 3D reimagining of the classic Snake game, played on the surface of a voxel cube. Built with **Rust**, **WebAssembly**, and **Three-d**.
 
+[**Play Demo**](https://lemon-stone-0b6b42e1e.3.azurestaticapps.net)
+
 ![Snake 3D Icon](favicon.png)
 
 ## Features
