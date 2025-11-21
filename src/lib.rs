@@ -21,7 +21,7 @@ pub fn init() -> Result<(), JsValue> {
     log::info!("Found canvas, creating Window...");
     let window = Window::new(WindowSettings {
         title: "3D Snake".to_string(),
-        canvas: Some(canvas),
+        canvas: Some(canvas.clone()),
         ..Default::default()
     })
     .unwrap();
@@ -37,6 +37,14 @@ pub fn init() -> Result<(), JsValue> {
     let move_interval = 0.15; // Seconds per move (speed)
     let mut has_logged = false;
 
+    // Hide loading screen
+    if let Some(loading_el) = document.get_element_by_id("loading") {
+        loading_el.set_attribute("style", "display: none").unwrap();
+    }
+    
+    // Focus canvas to ensure it receives keys
+    canvas.focus().unwrap_or(());
+    
     window.render_loop(move |frame_input| {
         if !has_logged {
             log::info!("Viewport: {:?}", frame_input.viewport);
@@ -94,7 +102,7 @@ pub fn init() -> Result<(), JsValue> {
         update_ui(&game);
 
         // Render
-        renderer.render(&game, &frame_input.screen());
+        renderer.render(&game, &frame_input.screen(), frame_input.elapsed_time / 1000.0);
 
         FrameOutput::default()
     });

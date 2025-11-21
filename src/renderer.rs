@@ -4,11 +4,14 @@ use crate::game::{GameState, Position, Face};
 pub struct GameRenderer {
     context: Context,
     camera: Camera,
-    control: OrbitControl,
+    // control: OrbitControl, // Disabled for auto-camera
     board_instances: Gm<InstancedMesh, PhysicalMaterial>,
+    grid_instances: Gm<InstancedMesh, PhysicalMaterial>,
     snake_instances: Gm<InstancedMesh, PhysicalMaterial>,
     food_mesh: Gm<Mesh, PhysicalMaterial>,
     grid_size: i32,
+    target_pos: Vec3,
+    target_up: Vec3,
 }
 
 impl GameRenderer {
@@ -22,7 +25,7 @@ impl GameRenderer {
             0.1,
             100.0,
         );
-        let control = OrbitControl::new(*camera.target(), 1.0, 100.0);
+        // let control = OrbitControl::new(*camera.target(), 1.0, 100.0);
 
         // Board Voxels
         let mut board_transformations = Vec::new();
@@ -92,6 +95,65 @@ impl GameRenderer {
             }, &CpuMesh::cube()),
             board_material,
         );
+
+        // Grid Lines (3D Beams)
+        let mut grid_transformations = Vec::new();
+        let step = 2.0 / grid_size as f32;
+        let offset = 0.002; // Slightly above surface
+        let thickness = 0.02; // Thickness of the grid lines
+
+        // Helper to add beam
+        let mut add_beam = |pos: Vec3, scale: Vec3| {
+            grid_transformations.push(
+                Mat4::from_translation(pos) * Mat4::from_nonuniform_scale(scale.x, scale.y, scale.z)
+            );
+        };
+
+        // Generate grid for each face
+        for i in 0..=grid_size {
+            let t = -1.0 + (i as f32 * step);
+            
+            // Front & Back (z = +/- 1)
+            // Vertical lines
+            add_beam(vec3(t, 0.0, 1.0 + offset), vec3(thickness, 1.0, thickness)); // Front
+            add_beam(vec3(t, 0.0, -1.0 - offset), vec3(thickness, 1.0, thickness)); // Back
+            // Horizontal lines
+            add_beam(vec3(0.0, t, 1.0 + offset), vec3(1.0, thickness, thickness)); // Front
+            add_beam(vec3(0.0, t, -1.0 - offset), vec3(1.0, thickness, thickness)); // Back
+
+            // Left & Right (x = +/- 1)
+            // Vertical lines (y axis)
+            add_beam(vec3(1.0 + offset, 0.0, t), vec3(thickness, 1.0, thickness)); // Right
+            add_beam(vec3(-1.0 - offset, 0.0, t), vec3(thickness, 1.0, thickness)); // Left
+            // Horizontal lines (z axis)
+            add_beam(vec3(1.0 + offset, t, 0.0), vec3(thickness, thickness, 1.0)); // Right
+            add_beam(vec3(-1.0 - offset, t, 0.0), vec3(thickness, thickness, 1.0)); // Left
+
+            // Top & Bottom (y = +/- 1)
+            // Lines along x
+            add_beam(vec3(0.0, 1.0 + offset, t), vec3(1.0, thickness, thickness)); // Top
+            add_beam(vec3(0.0, -1.0 - offset, t), vec3(1.0, thickness, thickness)); // Bottom
+            // Lines along z
+            add_beam(vec3(t, 1.0 + offset, 0.0), vec3(thickness, thickness, 1.0)); // Top
+            add_beam(vec3(t, -1.0 - offset, 0.0), vec3(thickness, thickness, 1.0)); // Bottom
+        }
+
+        let grid_instances = Gm::new(
+            InstancedMesh::new(&context, &Instances {
+                transformations: grid_transformations,
+                ..Default::default()
+            }, &CpuMesh::cube()),
+            PhysicalMaterial::new(
+                &context,
+                &CpuMaterial {
+                    albedo: Srgba::new(0, 255, 255, 255), // Bright Cyan
+                    emissive: Srgba::new(0, 200, 200, 255), // Glowing
+                    roughness: 0.5,
+                    metallic: 0.5,
+                    ..Default::default()
+                },
+            ),
+        );
         
         // Snake Instances
         let snake_instances = Gm::new(
@@ -122,11 +184,14 @@ impl GameRenderer {
         Self {
             context,
             camera,
-            control,
+            // control,
             board_instances,
+            grid_instances,
             snake_instances,
             food_mesh,
             grid_size,
+            target_pos: vec3(0.0, 0.0, 4.0),
+            target_up: vec3(0.0, 1.0, 0.0),
         }
     }
 
@@ -134,18 +199,55 @@ impl GameRenderer {
         self.camera.set_viewport(Viewport::new_at_origo(width, height));
     }
 
-    pub fn update_camera(&mut self, events: &mut [Event]) {
-        self.control.handle_events(&mut self.camera, events);
+    pub fn update_camera(&mut self, _events: &mut [Event]) {
+        // self.control.handle_events(&mut self.camera, events);
     }
 
-    pub fn render(&mut self, game: &GameState, target: &RenderTarget) {
+    pub fn update_camera_target(&mut self, face: Face) {
+        let (pos, up) = match face {
+            Face::Front => (vec3(0.0, 0.0, 4.0), vec3(0.0, 1.0, 0.0)),
+            Face::Back => (vec3(0.0, 0.0, -4.0), vec3(0.0, 1.0, 0.0)),
+            Face::Left => (vec3(-4.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0)),
+            Face::Right => (vec3(4.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0)),
+            Face::Top => (vec3(0.0, 4.0, 0.0), vec3(0.0, 0.0, -1.0)),
+            Face::Bottom => (vec3(0.0, -4.0, 0.0), vec3(0.0, 0.0, 1.0)),
+        };
+        
+        self.target_pos = pos;
+        self.target_up = up;
+    }
+
+    pub fn render(&mut self, game: &GameState, target: &RenderTarget, dt: f64) {
+        // Update Camera Position based on Snake Head
+        self.update_camera_target(game.snake.head().face);
+
+        // Smoothly interpolate camera
+        let speed = 5.0; // Adjust for smoothness
+        let t = (speed * dt as f32).min(1.0);
+        
+        let current_pos = *self.camera.position();
+        let current_up = *self.camera.up();
+        
+        let new_pos = current_pos.lerp(self.target_pos, t);
+        let new_up = current_up.lerp(self.target_up, t).normalize();
+        
+        self.camera = Camera::new_perspective(
+            self.camera.viewport(),
+            new_pos,
+            vec3(0.0, 0.0, 0.0),
+            new_up,
+            degrees(45.0),
+            0.1,
+            100.0,
+        );
+
         let cell_size = 2.0 / self.grid_size as f32;
         let offset = 0.05; // Lift off surface
 
         // Update Snake Instances
         let transformations: Vec<Mat4> = game.snake.body.iter().map(|pos| {
             let center = self.pos_to_vec3(*pos, cell_size, offset);
-            Mat4::from_translation(center) * Mat4::from_scale(cell_size * 0.9) // Slightly smaller than cell
+            Mat4::from_translation(center) * Mat4::from_scale(cell_size * 0.6) // Smaller snake
         }).collect();
         
         let instances = Instances {
@@ -169,7 +271,7 @@ impl GameRenderer {
         target.clear(ClearState::color_and_depth(0.1, 0.1, 0.1, 1.0, 1.0)); // Dark grey
 
         // Render objects
-        let objects: &[&dyn Object] = &[&self.board_instances, &self.snake_instances, &self.food_mesh];
+        let objects: &[&dyn Object] = &[&self.board_instances, &self.grid_instances, &self.snake_instances, &self.food_mesh];
         target.render(&self.camera, objects, lights);
     }
 

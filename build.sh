@@ -2,7 +2,7 @@
 set -e
 
 echo "Building WASM..."
-wasm-pack build --target web
+wasm-pack build --target web --dev
 
 echo "Build complete. To run, use a local server, e.g.:"
 echo "python3 -m http.server"
