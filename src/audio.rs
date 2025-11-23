@@ -1,5 +1,4 @@
 use web_sys::{AudioContext, OscillatorType};
-use wasm_bindgen::JsValue;
 
 pub struct AudioPlayer {
     context: Option<AudioContext>,
