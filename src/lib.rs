@@ -8,6 +8,9 @@ use crate::audio::AudioPlayer;
 mod game;
 mod renderer;
 mod audio;
+mod leaderboard;
+
+use leaderboard::{save_score, update_leaderboard_ui};
 
 #[wasm_bindgen(start)]
 pub fn init() -> Result<(), JsValue> {
@@ -123,6 +126,82 @@ pub fn init() -> Result<(), JsValue> {
         closure.forget();
     }
 
+    // Leaderboard logic setup
+    let leaderboard_btn = document.get_element_by_id("leaderboard-btn").unwrap();
+    let close_leaderboard_btn = document.get_element_by_id("close-leaderboard-btn").unwrap();
+    let submit_score_btn = document.get_element_by_id("submit-score-btn").unwrap();
+
+    let show_leaderboard = Rc::new(Box::new(move || {
+        let document = web_sys::window().unwrap().document().unwrap();
+        if let Some(modal) = document.get_element_by_id("leaderboard-modal") {
+            modal.class_list().remove_1("hidden").unwrap_or(());
+            update_leaderboard_ui();
+        }
+    }) as Box<dyn Fn()>);
+
+    let hide_leaderboard = Rc::new(Box::new(move || {
+         let document = web_sys::window().unwrap().document().unwrap();
+         if let Some(modal) = document.get_element_by_id("leaderboard-modal") {
+             modal.class_list().add_1("hidden").unwrap_or(());
+         }
+    }) as Box<dyn Fn()>);
+
+    {
+        let show = show_leaderboard.clone();
+        let closure = Closure::wrap(Box::new(move || {
+            show();
+        }) as Box<dyn FnMut()>);
+        leaderboard_btn.add_event_listener_with_callback("click", closure.as_ref().unchecked_ref()).unwrap();
+        closure.forget();
+    }
+
+    {
+        let hide = hide_leaderboard.clone();
+        let closure = Closure::wrap(Box::new(move || {
+            hide();
+        }) as Box<dyn FnMut()>);
+        close_leaderboard_btn.add_event_listener_with_callback("click", closure.as_ref().unchecked_ref()).unwrap();
+        closure.forget();
+    }
+
+    // Shared state for restart request from UI (since main loop handles GameState reset)
+    let restart_requested = Rc::new(RefCell::new(false));
+
+    // Submit score handler
+    // We need to access current score. We can't access `game` directly in callback.
+    // We can store the pending score in a shared cell when Game Over happens.
+    let pending_score = Rc::new(RefCell::new(0u32));
+    let pending_score_clone = pending_score.clone();
+    let show_leaderboard_clone = show_leaderboard.clone();
+    let restart_requested_clone = restart_requested.clone();
+
+    {
+        let closure = Closure::wrap(Box::new(move || {
+            let document = web_sys::window().unwrap().document().unwrap();
+            let input = document.get_element_by_id("player-name").unwrap()
+                .dyn_into::<web_sys::HtmlInputElement>().unwrap();
+            let name = input.value();
+            if !name.is_empty() {
+                save_score(&name, *pending_score_clone.borrow());
+                input.set_value(""); // Clear input
+                show_leaderboard_clone();
+                // Also hide game over screen logic via restart or explicit hide?
+                // Actually, if we submit, we probably want to restart or stay in game over.
+                // Usually showing leaderboard is good.
+                // Let's trigger a restart of the game state but maybe keep showing leaderboard.
+                *restart_requested_clone.borrow_mut() = true;
+
+                // Close Game Over screen? Main loop handles visibility based on game state.
+                // If we set restart_requested, main loop will reset game, game_over becomes false, UI updates.
+                // But we want to see the leaderboard first.
+                // If we reset game immediately, background plays.
+                // Let's just reset. Leaderboard is a modal on top.
+            }
+        }) as Box<dyn FnMut()>);
+        submit_score_btn.add_event_listener_with_callback("click", closure.as_ref().unchecked_ref()).unwrap();
+        closure.forget();
+    }
+
     // Hide loading screen
     if let Some(loading_el) = document.get_element_by_id("loading") {
         loading_el.set_attribute("style", "display: none").unwrap();
@@ -138,6 +217,16 @@ pub fn init() -> Result<(), JsValue> {
         }
         let mut events = frame_input.events.clone(); // Clone events to pass to camera and handle locally
         
+        // Check for restart request from UI
+        if *restart_requested.borrow() {
+            if game.game_over {
+                let high_score = game.high_score;
+                game = GameState::new(grid_size);
+                game.high_score = high_score;
+            }
+            *restart_requested.borrow_mut() = false;
+        }
+
         // Handle Input
         // Check mobile input
         let mut mobile_dir = None;
@@ -222,7 +311,11 @@ pub fn init() -> Result<(), JsValue> {
                     audio.play_prize();
                     renderer.spawn_particles(old_food_pos, true);
                 },
-                crate::game::GameEvent::GameOver => audio.play_game_over(),
+                crate::game::GameEvent::GameOver => {
+                    audio.play_game_over();
+                    // Update pending score for submit
+                    *pending_score.borrow_mut() = game.score;
+                },
                 crate::game::GameEvent::None => {}
             }
             time_since_last_move = 0.0;

@@ -18,11 +18,28 @@
             <div>Score: <span id="score">0</span></div>
             <div id="high-score-container" class="hidden">High Score: <span id="high-score">0</span></div>
         </div>
+        <button id="leaderboard-btn" class="ui-btn top-right">🏆 Leaderboard</button>
+
         <div id="game-over" class="hidden">
             <h1>Game Over</h1>
             <div id="final-score">Score: 0</div>
-            <p class="blink">Press 'R' to Restart</p>
+            <div id="name-entry">
+                <input type="text" id="player-name" placeholder="Enter Name" maxlength="10">
+                <button id="submit-score-btn" class="ui-btn">Submit Score</button>
+            </div>
+            <p class="blink" style="margin-top: 20px;">Press 'R' or Submit to Restart</p>
         </div>
+
+        <div id="leaderboard-modal" class="hidden modal">
+            <div class="modal-content">
+                <h2>Top 10 Players</h2>
+                <ul id="leaderboard-list">
+                    <!-- List items will be injected here -->
+                </ul>
+                <button id="close-leaderboard-btn" class="ui-btn">Close</button>
+            </div>
+        </div>
+
         <div id="controls-hint">
             WASD / Arrows to Move | R to Restart
         </div>
