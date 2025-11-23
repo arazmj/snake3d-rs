@@ -1,0 +1,14 @@
+   Compiling snake3d-server v0.1.0 (/app/server)
+warning: unused import: `File`
+ --> src/main.rs:6:21
+  |
+6 | use std::fs::{self, File};
+  |                     ^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `std::io::Write`
+ --> src/main.rs:7:5
+  |
+7 | use std::io::Write;
+  |     ^^^^^^^^^^^^^^
