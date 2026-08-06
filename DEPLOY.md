@@ -21,9 +21,9 @@ This guide explains how to deploy the 3D Snake game to Azure Static Web Apps.
     - **Organization/Repository/Branch**: Select your repo and the `main` branch.
 3.  **Build Details**:
     - **Build Presets**: Select "Custom".
-    - **App location**: `/`
+    - **App location**: `/dist`
     - **Api location**: (Leave empty)
-    - **Output location**: `.` (This serves the root directory)
+    - **Output location**: (Leave empty)
 4.  **Review + Create**: Click "Review + create" and then "Create".
 
 Azure will automatically create a GitHub Actions workflow in your repository and start building/deploying your app.
@@ -38,8 +38,8 @@ Azure will automatically create a GitHub Actions workflow in your repository and
     - Enter a name.
     - Select a region.
     - Select "Custom" for the build preset.
-    - Enter `/` for the location of your application code.
-    - Enter `.` for the build output location.
+    - Enter `/dist` for the location of your prebuilt application.
+    - Leave the build output location empty.
 5.  The extension will create the resources and the GitHub Action.
 
 ## Important: Build Configuration
@@ -60,9 +60,16 @@ Example modification to the workflow file:
 
       - name: Build WASM
         run: ./build.sh
+
+      - name: Prepare deployment artifact
+        run: |
+          mkdir -p dist
+          cp index.html style.css favicon.png dist/
+          cp -R pkg dist/
 ```
 
-**Note**: Since `build.sh` runs `wasm-pack`, you just need to make sure `wasm-pack` is installed in the runner.
+Configure the deploy action with `app_location: "/dist"`,
+`output_location: ""`, and `skip_app_build: true`.
 
 ## Verifying Deployment
 
